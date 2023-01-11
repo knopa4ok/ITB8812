@@ -1,6 +1,7 @@
 
 library(shiny);
 library(shinythemes);
+library(skimr)
 library(corrplot)
 library(car)
 library(caret)
@@ -14,6 +15,8 @@ library(shinycssloaders)
 
 # Andmete laadimine
 store <- env()
+gc()
+print(store$mars3)
 data=read.csv('Andmestik.csv', header = T)
 data$Type = as.factor(data$Type)
 
@@ -32,7 +35,7 @@ ui <- fluidPage(
   navbarPage("Klaasi kvaliteet", theme = shinytheme("lumen"),
              tabPanel("Andmed", fluid = TRUE,
                       sidebarLayout(
-                        sidebarPanel(
+                        sidebarPanel(width=3,
                           tags$h4("Andmete kirjeldamine"),
                           tags$ul(
                             tags$li(
@@ -83,9 +86,19 @@ ui <- fluidPage(
                                 tags$li("Esituled"),
                               )
                             ),
+                          ),
+                          tags$hr(style='border-color: #c0c0c0'),
+                          tags$img(src='https://cdn.britannica.com/78/149178-050-F2421B64/light-prism-color-angle-colors-wavelength-wavelengths.jpg?w=400&h=300&c=crop',width='100%'),
+                          tags$hr(style='border-color: #c0c0c0'),
+                          tags$b("Autorid:"),
+                          tags$ul(
+                            tags$li('Konstantin Malinovski'), 
+                            tags$li('Valentina Volkova'),
+                            tags$li('Alesja Malinovskaja'),
+    
                           )
                         ),
-                        mainPanel(
+                        mainPanel(width=9,
                           titlePanel("Andmestiku kirjeldus"),
                           # Create a new Row in the UI for selectInputs
                           fluidRow(
@@ -159,8 +172,9 @@ ui <- fluidPage(
                           ),
                           # Create a new row for the table.
                           DT::dataTableOutput("andmestiku_kirjeldus")%>% withSpinner(type = 5),
-                        )
+                          DT::dataTableOutput('andmed_summary')%>% withSpinner(type = 5),
                       ),
+                    )
              ),
              tabPanel("Andmete esmaanalüüs", fluid = TRUE,
                       mainPanel(
@@ -253,14 +267,36 @@ ui <- fluidPage(
                                       ),
                                       tabPanel('Kokkuvõtte', value = 4,
                                                tags$h4(textOutput("mars_kokkuvotte_title")),
-                                               uiOutput("mars_kokkuvotte", height='200',width='auto'),
+                                               radioButtons('mars_kokkuvotte_result_type', label=h5('Valige mudel kirjeldusvõime vaatamiseks'),
+                                                            choices = list(
+                                                              "degree=1 teisendamata, 10 termi" = 1,
+                                                              "degree=1 teisendatud, 10 termi" = 2,
+                                                              "degree=1, tuunitud parameetritega" = 3,
+                                                              "degree=3, 17 term" = 4
+                                                            ), selected = 1),
+                                               fluidRow(verbatimTextOutput("mars_kokkuvotte")),
+                                               tags$h4(align='center',tags$b("Parim MARS mudel on 17 termiga mudel degree=3: RMSE=0.0004736428, R2=92.56%")),
+                                               tags$hr(style='border-color: #0275d8'),
+                                               tags$h4(align='center',tags$b("Kolm kõige tähtsamad muutujad on Ca, Si ja Al.")),
                                                plotOutput("mars_kokkuvotte_plot", height='500',width='auto')%>% withSpinner(type = 5)
                                       )
                           )
                         ),
                       ),
+             ),
+             tabPanel("Üldkokkuvõte", fluid = TRUE,
+                      mainPanel(
+                        titlePanel("Mudelite võrdlemine"),
+                        tableOutput('uldkokkuvotte_table') %>% withSpinner(type = 5),
+                        tags$h4(align='left', "Kasutatud materjalid"),
+                        tags$ol(
+                          tags$li("Projektis on kasustatud kursuses EVM0250 Algoritmika andmeteaduses esitatud õppematerialid ja harjutused."),
+                          tags$li("UCI Machine Learning. Glass Classification. Can you correctly identify glass type? Avaiable at::", 
+                                  tags$a(href='https://www.kaggle.com/uciml/glass?select=glass.csv', 'https://www.kaggle.com/uciml/glass?select=glass.csv'))
+                        )
+                      )
              )
-  )
+         )
 )
 
 # Define server logic required to draw a histogram
@@ -305,7 +341,7 @@ server <- function(input, output) {
     }
     data
   }))
-
+  output$andmed_summary <- DT::renderDataTable(skim(data))
   # Andmete esmaanaluus
   output$esmaanaluus_hajuvusdiagramm <- renderPlot({ #2
     par(mfrow=c(1,1))
@@ -355,6 +391,7 @@ server <- function(input, output) {
   
   print("Andmete ettevalmistus STOP")
   print(timestamp())
+  
   
   # MLR
   print("MLR START")
@@ -488,6 +525,7 @@ server <- function(input, output) {
     }
   })
   print("MLR END")
+  
   # MARS
   print("MARS START")
   print(timestamp())
@@ -507,6 +545,7 @@ server <- function(input, output) {
       env_cache(store, 'mars2', mars2)
       rm('mars2')
     })
+    gc()
   }
   if(is.null(store$cv_mars27)){
     hyper_grid <- expand.grid(degree=1, nprune=2:30)
@@ -528,12 +567,14 @@ server <- function(input, output) {
     
     env_cache(store, 'cv_mars27', cv_mars27)
     rm('cv_mars27')
+    gc()
     stopCluster(Mycluster)
   }
   if(is.null(store$cv_mars3)){
     mars3 = earth(log(RI)~.,data=data_train,degree=3,nprune=46)
     env_cache(store, 'mars3', mars3)
     rm('mars3')
+    gc()
   }
   gc()
   output$mars_sidebar_selectbox <- renderUI({
@@ -572,6 +613,7 @@ server <- function(input, output) {
         width="90%",
         src='http://filosoofiakirjutamine.weebly.com/uploads/5/5/1/2/5512308/1672096.gif?320')
     }
+    
   })
   output$mars_diagnostic <- renderPlot({ #22,23,28,31
     req(input$mars_diagnostic_plot_type);
@@ -587,6 +629,7 @@ server <- function(input, output) {
     if(input$mars_diagnostic_plot_type == "4"){ #31
       plot(store$mars3)
     }
+    gc()
   }) %>% bindCache('mars_diagnostic',input$mars_diagnostic_plot_type)
   output$mars_prognoosid_title <- renderText({
     req(input$mars_prognoosid_plot_type);
@@ -617,6 +660,7 @@ server <- function(input, output) {
       abline(0,1,lwd=2,col="red")
       lines(loess.smooth(data_train$RI,exp(store$mars3$fitted.values)), col='blue', lwd=2)
     } 
+    gc()
   }) %>% bindCache('mars_prognoosid',input$mars_prognoosid_plot_type)
   output$mars_visualiseerimine_title <- renderText({
     req(input$mars_visualiseerimine_plot_type);
@@ -640,7 +684,6 @@ server <- function(input, output) {
         names(out) <- c("RMSE","Rsquared")
         out
       }
-      gc();
       Mycluster = makeCluster(detectCores()-1)
       registerDoParallel(Mycluster)
       registerDoSEQ()
@@ -656,43 +699,48 @@ server <- function(input, output) {
                          tuneGrid = hyper_grid)
       })
       stopCluster(Mycluster)
-      gc()
       p <- ggplot(cv_mars, aes(results$nprune, result$RMSE)) +
         coord_cartesian(xlim=input$mars_visual_slider_x,ylim=input$mars_visual_slider_y)
       p
       
     } 
     else if(input$mars_visualiseerimine_plot_type == 2){ #27
-      p <- ggplot(cv_mars27(), aes(results$nprune, result$RMSE)) +
+      p <- ggplot(store$cv_mars27, aes(results$nprune, result$RMSE)) +
         coord_cartesian(xlim=input$mars_visual_slider_x,ylim=input$mars_visual_slider_y)
       p
     }
   }) %>% bindCache('mars_visualiseerimine',input$mars_visualiseerimine_plot_type)
   output$mars_kokkuvotte_title <- renderText({
-    return("Võrdleme mudeli prognoose tunnuse Y tegelike väärtustega fitted/predicted vs actual diagrammil. Ideaalis punktid peavad paiknema y=x punasel joonel. Scatterploti siledav sinine joon näitab tegelikku tendentsi.")
+    return("Parimate MARS mudelite Log(Y) teisendusega käitumine testandmetel:")
   })
-  output$mars_kokkuvotte <- renderUI({#34
-    tags$div(
-      tags$b('Parimate MARS mudelite Log(Y) teisendusega käitumine testandmetel:'),
-      tags$ul(
-        tags$ol("degree=1 teisendamata, 10 termi:",
-                tags$b("RMSE=0.000891108, R2=88.59%")),
-        tags$ol("degree=1 teisendatud, 10 termi:",
-                tags$b("RMSE=0.0008910277, R2=88.60%")),
-        tags$ol("degree=1, tuunitud parameetritega:",
-                tags$b("RMSE=0.001178749, R2=80.73%")),
-        tags$ol("degree=3, 17 term:",
-                tags$b("RMSE=0.0004736428, R2=92.56%")),
-        tags$ol("Parim MARS mudel on 17 termiga mudel degree=3:",
-                tags$b("RMSE=0.0004736428, R2=92.56%"))
-      ),
-    )
+  output$mars_kokkuvotte <- renderPrint({
+    if(input$mars_kokkuvotte_result_type == 1){
+      p <- "RMSE=0.000891108, R2=88.59%"
+    }
+    else if(input$mars_kokkuvotte_result_type == 2){
+      p <- "RMSE=0.0008910277, R2=88.60%"
+    }
+    else if(input$mars_kokkuvotte_result_type == 3){
+      p <- "RMSE=0.001178749, R2=80.73%"
+    }
+    else if(input$mars_kokkuvotte_result_type == 4){
+      p <- "RMSE=0.0004736428, R2=92.56%"
+    }
+    p
   });
   output$mars_kokkuvotte_plot <- renderPlot({ #34
     op <- par(mar=c(5,8,4,2)) 
     plot(x = varImp(store$mars3)$Overall, y = reorder(factor(rownames(varImp(store$mars3))),varImp(store$mars3)$Overall), main = "Muutujate tähtsus", yaxt = "n", ylab = "", xlab = "",pch = 19, col = 4, cex=1.2)
     axis(2, at = 1:nrow(varImp(store$mars3)), labels = levels(reorder(factor(rownames(varImp(store$mars3))),varImp(store$mars3)$Overall)), las = 2,cex.axis=1.1,tck = 1,lty = 2, col = "gray")
   }) %>% bindCache('mars_kokkuvotte_plot');
+  
+  output$uldkokkuvotte_table <- renderTable({
+    mudel <- c("Lihtne MLR mudel", "Teisendatud Log(Y) MLR mudel", "Polünoommudel", "Eemaldatud erinditega polünoommudel")
+    RMSE <- c(0.0009191863, 0.001039474, 0.0008895666, 0.0008572779)
+    R2 <- c(0.871, 0.8447, 0.8863,0.8946)
+    tabel1 <- cbind("Mudel"=mudel,"RMSE"=RMSE,"R^2"=R2)
+    tabel2 <- rbind(tabel1,c("MARS degree=3",0.0004736428, 0.9256))
+  })
   
   print("MARS OUTPUT END")
   print(timestamp())
